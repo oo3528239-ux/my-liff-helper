@@ -24,93 +24,81 @@
     </div>
 
    <script>
-    // --- 1. 請填入你的 LIFF ID ---
-    const LIFF_ID = "2009611601-cFSHJbYx"; 
-    // ----------------------------
+    // --- 務必確認這裡填的是「LIFF ID」(格式：200xxxxxxx-xxxxxxxx) ---
+    const LIFF_ID = "2009611601-cFSHJbYx" 
 
+    // 1. 先定義按鈕功能，確保「按了會有反應」
+    document.getElementById("sendBtn").onclick = async function() {
+        const textInput = document.getElementById("inputText");
+        const status = document.getElementById("status");
+        
+        if (!textInput.value.trim()) {
+            alert("請輸入文字內容！");
+            return;
+        }
+
+        console.log("按鈕已觸發");
+        status.style.display = "block";
+        status.innerText = "AI 思考中...";
+
+        try {
+            // 呼叫 AI
+            const optimized = await callGemini(textInput.value);
+            console.log("AI 優化成功:", optimized);
+
+            // 嘗試發送訊息
+            if (liff.isLoggedIn() && liff.isInClient()) {
+                await liff.sendMessages([{
+                    type: 'text',
+                    text: optimized
+                }]);
+                liff.closeWindow(); 
+            } else {
+                // 如果不是在 LINE 裡面，至少要把結果秀出來
+                alert("優化結果：\n" + optimized + "\n\n(提示：非 LINE 環境無法自動發送)");
+            }
+        } catch (err) {
+            alert("發生錯誤：" + err.message);
+        } finally {
+            status.style.display = "none";
+        }
+    };
+
+    // 2. AI 呼叫邏輯 (修正 URL)
+    async function callGemini(rawText) {
+        let currentKey = localStorage.getItem('gemini_api_key');
+        if (!currentKey) {
+            currentKey = prompt("請貼上您的 Gemini API Key：");
+            if (currentKey) localStorage.setItem('gemini_api_key', currentKey);
+            else throw new Error("未提供 API Key");
+        }
+
+        const url = `https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key=${currentKey}`;
+        const response = await fetch(url, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                contents: [{ parts: [{ text: `你是一位資深語言潤色專家，將以下內容改寫為專業職場 LINE 訊息：${rawText}` }] }]
+            })
+        });
+
+        const data = await response.json();
+        if (data.error) throw new Error("Google 報錯: " + data.error.message);
+        return data.candidates[0].content.parts[0].text.trim();
+    }
+
+    // 3. 最後才初始化 LIFF (不讓它卡死按鈕)
     async function initLiff() {
         try {
             await liff.init({ liffId: LIFF_ID });
             if (!liff.isLoggedIn()) {
                 liff.login();
             }
-        } catch (error) {
-            console.error("LIFF 初始化失敗", error);
-            alert("LIFF 初始化失敗，請檢查 ID 是否正確。");
+        } catch (e) {
+            console.error(e);
+            // 就算初始化失敗，按鈕還是能動，只是不能自動發訊息
         }
     }
-
-    async function callGemini(rawText) {
-        // 每次呼叫前都重新抓一次金鑰，確保是最新的
-        let currentKey = localStorage.getItem('gemini_api_key');
-        
-        if (!currentKey) {
-            currentKey = prompt("偵測到尚未設定金鑰，請貼上您的 Gemini API Key：");
-            if (currentKey) {
-                localStorage.setItem('gemini_api_key', currentKey);
-            } else {
-                throw new Error("操作取消：未提供 API Key。");
-            }
-        }
-
-        cconst url = `https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key=${currentKey}`;
-        
-        const response = await fetch(url, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-                contents: [{ parts: [{ text: `你是一位資深語氣優化專家。將以下內容潤色為職場 LINE 訊息（人性化、無修辭、字數相近）：${rawText}` }] }]
-            })
-        });
-
-        const data = await response.json();
-
-        // 捕捉 Google 的錯誤回傳
-        if (data.error) {
-            if (data.error.message.includes("API key")) {
-                localStorage.removeItem('gemini_api_key'); // 清除錯誤金鑰
-                throw new Error("金鑰無效！已自動清除，請重新整理頁面再試一次。");
-            }
-            throw new Error("AI 報錯：" + data.error.message);
-        }
-
-        if (!data.candidates || data.candidates.length === 0) {
-            throw new Error("AI 無法產生內容，請換個說法試試。");
-        }
-
-        return data.candidates[0].content.parts[0].text.trim();
-    }
-
-    document.getElementById("sendBtn").onclick = async function() {
-    const textInput = document.getElementById("inputText");
-    const status = document.getElementById("status");
-    
-    if (!textInput.value.trim()) return alert("請輸入文字");
-
-    status.style.display = "block";
-
-    try {
-        const optimized = await callGemini(textInput.value);
-
-        // --- 改良後的發送邏輯 ---
-        if (liff.isInClient()) {
-            liff.sendMessages([{
-                type: 'text',
-                text: optimized
-            }]).then(() => {
-                liff.closeWindow(); // 發送成功就關閉
-            }).catch((err) => {
-                alert("LINE 拒絕發送訊息：" + err.message + "\n請檢查 Scopes 是否有勾選 chat_message.write");
-            });
-        } else {
-            alert("優化成功！但在非 LINE 環境下無法發送：\n\n" + optimized);
-        }
-    } catch (err) {
-        alert("錯誤：" + err.message);
-    } finally {
-        status.style.display = "none";
-    }
-};
 
     initLiff();
 </script>
