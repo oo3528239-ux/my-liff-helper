@@ -23,90 +23,85 @@
         <p class="hint">點擊按鈕後，AI 會自動優化並發送到目前聊天室</p>
     </div>
 
-    <script>
+   <script>
     // --- 1. 請填入你的 LIFF ID ---
-    const LIFF_ID = "2009611601-cFSHJbYx"; 
+    const LIFF_ID = "你的_LIFF_ID"; 
     // ----------------------------
-
-    // 從本地儲存空間嘗試取得金鑰
-    let GEMINI_API_KEY = localStorage.getItem('gemini_api_key');
 
     async function initLiff() {
         try {
             await liff.init({ liffId: LIFF_ID });
-            
-            // 檢查是否已有金鑰，若無則跳出輸入框要求輸入
-            if (!GEMINI_API_KEY) {
-                const userKey = prompt("為了安全，請輸入您的 Gemini API Key：\n(金鑰將儲存在您的手機本地，不會上傳到網路上)");
-                if (userKey) {
-                    localStorage.setItem('gemini_api_key', userKey);
-                    GEMINI_API_KEY = userKey;
-                } else {
-                    alert("未輸入金鑰，AI 功能將無法使用。");
-                }
-            }
-
             if (!liff.isLoggedIn()) {
                 liff.login();
             }
         } catch (error) {
             console.error("LIFF 初始化失敗", error);
+            alert("LIFF 初始化失敗，請檢查 ID 是否正確。");
         }
     }
 
-    async function callGemini(content) {
-    if (!GEMINI_API_KEY) throw new Error("缺少 API Key，請重新整理頁面。");
+    async function callGemini(rawText) {
+        // 每次呼叫前都重新抓一次金鑰，確保是最新的
+        let currentKey = localStorage.getItem('gemini_api_key');
+        
+        if (!currentKey) {
+            currentKey = prompt("偵測到尚未設定金鑰，請貼上您的 Gemini API Key：");
+            if (currentKey) {
+                localStorage.setItem('gemini_api_key', currentKey);
+            } else {
+                throw new Error("操作取消：未提供 API Key。");
+            }
+        }
 
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}`;
-    
-    try {
+        const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${currentKey}`;
+        
         const response = await fetch(url, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
-                contents: [{ parts: [{ text: `你是一位資深語言潤色專家。將以下內容改寫為職場訊息：${content}` }] }]
+                contents: [{ parts: [{ text: `你是一位資深語氣優化專家。將以下內容潤色為職場 LINE 訊息（人性化、無修辭、字數相近）：${rawText}` }] }]
             })
         });
 
         const data = await response.json();
 
-        // 如果 Google 有回傳錯誤訊息，直接顯示出來
+        // 捕捉 Google 的錯誤回傳
         if (data.error) {
-            // 如果顯示 API_KEY_INVALID，代表金鑰填錯了
-            if (data.error.status === "INVALID_ARGUMENT" || data.error.message.includes("API key")) {
-                localStorage.removeItem('gemini_api_key'); // 自動清除錯誤金鑰
-                throw new Error("金鑰無效 (API_KEY_INVALID)，請重新整理並輸入正確的金鑰。");
+            if (data.error.message.includes("API key")) {
+                localStorage.removeItem('gemini_api_key'); // 清除錯誤金鑰
+                throw new Error("金鑰無效！已自動清除，請重新整理頁面再試一次。");
             }
-            throw new Error("Google API 報錯：" + data.error.message);
+            throw new Error("AI 報錯：" + data.error.message);
         }
 
-        return data.candidates[0].content.parts[0].text;
-    } catch (err) {
-        throw new Error(err.message);
+        if (!data.candidates || data.candidates.length === 0) {
+            throw new Error("AI 無法產生內容，請換個說法試試。");
+        }
+
+        return data.candidates[0].content.parts[0].text.trim();
     }
-}
 
     document.getElementById("sendBtn").addEventListener("click", async () => {
-        const text = document.getElementById("inputText").value;
-        if (!text) return alert("請輸入文字");
-
+        const textInput = document.getElementById("inputText");
         const status = document.getElementById("status");
+        
+        if (!textInput.value.trim()) {
+            return alert("請輸入要優化的文字。");
+        }
+
         status.style.display = "block";
 
         try {
-            const optimizedText = await callGemini(text);
+            const optimized = await callGemini(textInput.value);
 
             if (liff.isInClient()) {
-                await liff.sendMessages([{
-                    type: 'text',
-                    text: optimizedText
-                }]);
+                await liff.sendMessages([{ type: 'text', text: optimized }]);
                 liff.closeWindow(); 
             } else {
-                alert("優化結果：\n" + optimizedText + "\n\n(提示：若要重設金鑰，請點擊下方的重設按鈕或清除瀏覽器快取)");
+                alert("優化結果：\n" + optimized);
             }
         } catch (err) {
-            alert("發生錯誤：" + err.message);
+            alert(err.message); // 這裡一定會跳出錯誤訊息
         } finally {
             status.style.display = "none";
         }
