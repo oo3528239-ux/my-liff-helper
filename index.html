@@ -81,31 +81,36 @@
         return data.candidates[0].content.parts[0].text.trim();
     }
 
-    document.getElementById("sendBtn").addEventListener("click", async () => {
-        const textInput = document.getElementById("inputText");
-        const status = document.getElementById("status");
-        
-        if (!textInput.value.trim()) {
-            return alert("請輸入要優化的文字。");
+    document.getElementById("sendBtn").onclick = async function() {
+    const textInput = document.getElementById("inputText");
+    const status = document.getElementById("status");
+    
+    if (!textInput.value.trim()) return alert("請輸入文字");
+
+    status.style.display = "block";
+
+    try {
+        const optimized = await callGemini(textInput.value);
+
+        // --- 改良後的發送邏輯 ---
+        if (liff.isInClient()) {
+            liff.sendMessages([{
+                type: 'text',
+                text: optimized
+            }]).then(() => {
+                liff.closeWindow(); // 發送成功就關閉
+            }).catch((err) => {
+                alert("LINE 拒絕發送訊息：" + err.message + "\n請檢查 Scopes 是否有勾選 chat_message.write");
+            });
+        } else {
+            alert("優化成功！但在非 LINE 環境下無法發送：\n\n" + optimized);
         }
-
-        status.style.display = "block";
-
-        try {
-            const optimized = await callGemini(textInput.value);
-
-            if (liff.isInClient()) {
-                await liff.sendMessages([{ type: 'text', text: optimized }]);
-                liff.closeWindow(); 
-            } else {
-                alert("優化結果：\n" + optimized);
-            }
-        } catch (err) {
-            alert(err.message); // 這裡一定會跳出錯誤訊息
-        } finally {
-            status.style.display = "none";
-        }
-    });
+    } catch (err) {
+        alert("錯誤：" + err.message);
+    } finally {
+        status.style.display = "none";
+    }
+};
 
     initLiff();
 </script>
