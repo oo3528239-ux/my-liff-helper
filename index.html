@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI 職場語氣優化器</title>
+    <script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
+    <style>
+        body { font-family: -apple-system, sans-serif; padding: 20px; background-color: #f9f9f9; }
+        .container { background: white; padding: 20px; border-radius: 12px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+        textarea { width: 100%; height: 120px; border: 1px solid #ddd; border-radius: 8px; padding: 10px; font-size: 16px; box-sizing: border-box; resize: none; }
+        button { width: 100%; background-color: #06C755; color: white; border: none; border-radius: 8px; padding: 15px; font-size: 16px; font-weight: bold; margin-top: 15px; cursor: pointer; }
+        button:active { background-color: #05a346; }
+        .hint { font-size: 12px; color: #888; margin-top: 10px; text-align: center; }
+        #status { margin-top: 10px; text-align: center; color: #06C755; font-weight: bold; display: none; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <textarea id="inputText" placeholder="在這裡輸入原始內容...（例如：林經理，合約快點簽一簽）"></textarea>
+        <button id="sendBtn">優化並直接發送</button>
+        <div id="status">AI 思考中...</div>
+        <p class="hint">點擊按鈕後，AI 會自動優化並發送到目前聊天室</p>
+    </div>
+
+    <script>
+    // --- 1. 請填入你的 LIFF ID ---
+    const LIFF_ID = "2009611601-cFSHJbYx"; 
+    // ----------------------------
+
+    // 從本地儲存空間嘗試取得金鑰
+    let GEMINI_API_KEY = localStorage.getItem('gemini_api_key');
+
+    async function initLiff() {
+        try {
+            await liff.init({ liffId: LIFF_ID });
+            
+            // 檢查是否已有金鑰，若無則跳出輸入框要求輸入
+            if (!GEMINI_API_KEY) {
+                const userKey = prompt("為了安全，請輸入您的 Gemini API Key：\n(金鑰將儲存在您的手機本地，不會上傳到網路上)");
+                if (userKey) {
+                    localStorage.setItem('gemini_api_key', userKey);
+                    GEMINI_API_KEY = userKey;
+                } else {
+                    alert("未輸入金鑰，AI 功能將無法使用。");
+                }
+            }
+
+            if (!liff.isLoggedIn()) {
+                liff.login();
+            }
+        } catch (error) {
+            console.error("LIFF 初始化失敗", error);
+        }
+    }
+
+    async function callGemini(rawText) {
+        if (!GEMINI_API_KEY) throw new Error("缺少 API Key，請重新整理頁面並輸入。");
+
+        const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}`;
+        const response = await fetch(url, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                contents: [{
+                    parts: [{
+                        text: `你是一位資深的語言風格轉換與文本潤色專家。
+                               任務：將輸入的原始內容，優化為自然、得體且專業的職場 LINE 訊息。
+                               要求：
+                               1. 針對對象調整禮貌等級，語氣要像真人，消除機械感。
+                               2. 嚴禁使用比喻、排比、擬人修辭。
+                               3. 字數與輸入內容不得相差太大。
+                               原始內容：${rawText}`
+                    }]
+                }]
+            })
+        });
+
+        if (!response.ok) {
+            if (response.status === 400) {
+                localStorage.removeItem('gemini_api_key'); // 可能是金鑰錯誤，清除它讓使用者重填
+                throw new Error("金鑰無效或格式錯誤，已自動清除，請重新整理網頁再試。");
+            }
+            throw new Error("AI 呼叫失敗，請檢查網路或金鑰狀態。");
+        }
+
+        const data = await response.json();
+        return data.candidates[0].content.parts[0].text.trim();
+    }
+
+    document.getElementById("sendBtn").addEventListener("click", async () => {
+        const text = document.getElementById("inputText").value;
+        if (!text) return alert("請輸入文字");
+
+        const status = document.getElementById("status");
+        status.style.display = "block";
+
+        try {
+            const optimizedText = await callGemini(text);
+
+            if (liff.isInClient()) {
+                await liff.sendMessages([{
+                    type: 'text',
+                    text: optimizedText
+                }]);
+                liff.closeWindow(); 
+            } else {
+                alert("優化結果：\n" + optimizedText + "\n\n(提示：若要重設金鑰，請點擊下方的重設按鈕或清除瀏覽器快取)");
+            }
+        } catch (err) {
+            alert("發生錯誤：" + err.message);
+        } finally {
+            status.style.display = "none";
+        }
+    });
+
+    initLiff();
+</script>
+</body>
+</html>
