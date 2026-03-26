@@ -54,39 +54,37 @@
         }
     }
 
-    async function callGemini(rawText) {
-        if (!GEMINI_API_KEY) throw new Error("缺少 API Key，請重新整理頁面並輸入。");
+    async function callGemini(content) {
+    if (!GEMINI_API_KEY) throw new Error("缺少 API Key，請重新整理頁面。");
 
-        const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}`;
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}`;
+    
+    try {
         const response = await fetch(url, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-                contents: [{
-                    parts: [{
-                        text: `你是一位資深的語言風格轉換與文本潤色專家。
-                               任務：將輸入的原始內容，優化為自然、得體且專業的職場 LINE 訊息。
-                               要求：
-                               1. 針對對象調整禮貌等級，語氣要像真人，消除機械感。
-                               2. 嚴禁使用比喻、排比、擬人修辭。
-                               3. 字數與輸入內容不得相差太大。
-                               原始內容：${rawText}`
-                    }]
-                }]
+                contents: [{ parts: [{ text: `你是一位資深語言潤色專家。將以下內容改寫為職場訊息：${content}` }] }]
             })
         });
 
-        if (!response.ok) {
-            if (response.status === 400) {
-                localStorage.removeItem('gemini_api_key'); // 可能是金鑰錯誤，清除它讓使用者重填
-                throw new Error("金鑰無效或格式錯誤，已自動清除，請重新整理網頁再試。");
+        const data = await response.json();
+
+        // 如果 Google 有回傳錯誤訊息，直接顯示出來
+        if (data.error) {
+            // 如果顯示 API_KEY_INVALID，代表金鑰填錯了
+            if (data.error.status === "INVALID_ARGUMENT" || data.error.message.includes("API key")) {
+                localStorage.removeItem('gemini_api_key'); // 自動清除錯誤金鑰
+                throw new Error("金鑰無效 (API_KEY_INVALID)，請重新整理並輸入正確的金鑰。");
             }
-            throw new Error("AI 呼叫失敗，請檢查網路或金鑰狀態。");
+            throw new Error("Google API 報錯：" + data.error.message);
         }
 
-        const data = await response.json();
-        return data.candidates[0].content.parts[0].text.trim();
+        return data.candidates[0].content.parts[0].text;
+    } catch (err) {
+        throw new Error(err.message);
     }
+}
 
     document.getElementById("sendBtn").addEventListener("click", async () => {
         const text = document.getElementById("inputText").value;
